@@ -1,5 +1,5 @@
 build:
 	go build -o kubectl-save
 
-install: build cleanup
+install: build
 	sudo cp kubectl-save /usr/local/bin

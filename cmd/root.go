@@ -27,11 +27,10 @@ var opt struct {
 // NewBackupCMD creates a new Cobra command for backup
 func NewBackupCMD() *cobra.Command {
 	rootcmd := &cobra.Command{
-		Use:     "backup",
-		Aliases: []string{"backups"},
-		Short:   "backup",
-		Long:    "backup kubernetes workloads",
-		Example: "kubectl backup deployments -n default -o mydeployments.yaml",
+		Use:     "save",
+		Short:   "sv",
+		Long:    "save workloads",
+		Example: "kubectl save deployment --namespace controller -o controller-deployments.yaml",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				// Correctly report the file and line number
