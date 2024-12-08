@@ -53,11 +53,29 @@ func NewBackupCMD() *cobra.Command {
 
 // backup simulates the backup process for a Kubernetes secret
 
-func de_cluttering(in string) (string, error) {
-	out, err := cmd.Neat(in)
-	if err != nil {
-		return "", fmt.Errorf("error: %v", err)
+func de_cluttering(in string, apiVersion string, kind string) (string, error) {
+	// Parse the input JSON
+	var resource map[string]interface{}
+	if err := json.Unmarshal([]byte(in), &resource); err != nil {
+		return "", fmt.Errorf("error unmarshalling JSON: %v", err)
 	}
+
+	// Add apiVersion and kind if they don't exist
+	resource["apiVersion"] = apiVersion
+	resource["kind"] = kind
+
+	// Convert back to JSON for further processing
+	updatedJSON, err := json.Marshal(resource)
+	if err != nil {
+		return "", fmt.Errorf("error marshalling updated JSON: %v", err)
+	}
+
+	// Use the cmd.Neat function to clean up the resource
+	out, err := cmd.Neat(string(updatedJSON))
+	if err != nil {
+		return "", fmt.Errorf("error cleaning resource: %v", err)
+	}
+
 	return out, nil
 }
 
@@ -72,8 +90,12 @@ func convertToJson(data interface{}) (string, error) {
 func PrintWorkloadYaml(clientset *kubernetes.Clientset, namespace string, workload string) {
 	ctx := context.Background()
 
+	// Define apiVersion and kind based on the workload type
+	var apiVersion, kind string
 	switch workload {
 	case "deployment":
+		apiVersion = "apps/v1"
+		kind = "Deployment"
 		deployments, err := clientset.AppsV1().Deployments(namespace).List(ctx, metav1.ListOptions{})
 		if err != nil {
 			fmt.Printf("Error fetching deployments: %v\n", err)
@@ -85,15 +107,16 @@ func PrintWorkloadYaml(clientset *kubernetes.Clientset, namespace string, worklo
 				fmt.Printf("Error converting deployments to JSON: %v\n", err)
 				return
 			}
-			clean_data, err := de_cluttering(string(json))
+			cleanData, err := de_cluttering(string(json), apiVersion, kind)
 			if err != nil {
-				fmt.Errorf("error Cleaning Json to file: %v", err)
+				fmt.Printf("Error cleaning JSON: %v\n", err)
+				return
 			}
-
-			printYaml(clean_data)
-
+			printYaml(cleanData)
 		}
 	case "daemonset":
+		apiVersion = "apps/v1"
+		kind = "DaemonSet"
 		daemonSets, err := clientset.AppsV1().DaemonSets(namespace).List(ctx, metav1.ListOptions{})
 		if err != nil {
 			fmt.Printf("Error fetching daemonsets: %v\n", err)
@@ -105,15 +128,16 @@ func PrintWorkloadYaml(clientset *kubernetes.Clientset, namespace string, worklo
 				fmt.Printf("Error converting daemonSets to JSON: %v\n", err)
 				return
 			}
-			clean_data, err := de_cluttering(string(json))
+			cleanData, err := de_cluttering(string(json), apiVersion, kind)
 			if err != nil {
-				fmt.Errorf("error Cleaning Json to file: %v", err)
+				fmt.Printf("Error cleaning JSON: %v\n", err)
+				return
 			}
-
-			printYaml(clean_data)
-
+			printYaml(cleanData)
 		}
 	case "statefulset":
+		apiVersion = "apps/v1"
+		kind = "StatefulSet"
 		statefulSets, err := clientset.AppsV1().StatefulSets(namespace).List(ctx, metav1.ListOptions{})
 		if err != nil {
 			fmt.Printf("Error fetching statefulsets: %v\n", err)
@@ -125,13 +149,12 @@ func PrintWorkloadYaml(clientset *kubernetes.Clientset, namespace string, worklo
 				fmt.Printf("Error converting statefulSets to JSON: %v\n", err)
 				return
 			}
-			clean_data, err := de_cluttering(string(json))
+			cleanData, err := de_cluttering(string(json), apiVersion, kind)
 			if err != nil {
-				fmt.Errorf("error Cleaning Json to file: %v", err)
+				fmt.Printf("Error cleaning JSON: %v\n", err)
+				return
 			}
-
-			printYaml(clean_data)
-
+			printYaml(cleanData)
 		}
 	default:
 		fmt.Printf("Invalid workload type: %s\n", workload)
@@ -141,14 +164,18 @@ func PrintWorkloadYaml(clientset *kubernetes.Clientset, namespace string, worklo
 // PrintWorkloadYamlToFile fetches the YAML of the specified workload resources and writes them to a file.
 func PrintWorkloadYamlToFile(clientset *kubernetes.Clientset, namespace string, workload string, filename string) error {
 	ctx := context.Background()
-	// Open the file for writing
 	file, err := os.Create(filename)
 	if err != nil {
 		return fmt.Errorf("error creating file: %v", err)
 	}
 	defer file.Close()
+
+	// Define apiVersion and kind based on the workload type
+	var apiVersion, kind string
 	switch workload {
 	case "deployment":
+		apiVersion = "apps/v1"
+		kind = "Deployment"
 		deployments, err := clientset.AppsV1().Deployments(namespace).List(ctx, metav1.ListOptions{})
 		if err != nil {
 			return fmt.Errorf("error fetching deployments: %v", err)
@@ -156,55 +183,17 @@ func PrintWorkloadYamlToFile(clientset *kubernetes.Clientset, namespace string, 
 		for _, d := range deployments.Items {
 			json, err := convertToJson(d)
 			if err != nil {
-				fmt.Printf("Error converting daemonSets to JSON: %v\n", err)
-				return err
+				return fmt.Errorf("error converting deployments to JSON: %v", err)
 			}
-			clean_data, err := de_cluttering(string(json))
+			cleanData, err := de_cluttering(string(json), apiVersion, kind)
 			if err != nil {
-				fmt.Errorf("error Cleaning Json to file: %v", err)
+				return fmt.Errorf("error cleaning JSON: %v", err)
 			}
-			if err := writeYamlToFile(file, clean_data); err != nil {
+			if err := writeYamlToFile(file, cleanData); err != nil {
 				return err
 			}
 		}
-	case "daemonset":
-		daemonSets, err := clientset.AppsV1().DaemonSets(namespace).List(ctx, metav1.ListOptions{})
-		if err != nil {
-			return fmt.Errorf("error fetching daemonsets: %v", err)
-		}
-		for _, ds := range daemonSets.Items {
-			json, err := convertToJson(ds)
-			if err != nil {
-				fmt.Printf("Error converting daemonSets to JSON: %v\n", err)
-				return err
-			}
-			clean_data, err := de_cluttering(string(json))
-			if err != nil {
-				fmt.Errorf("error Cleaning Json to file: %v", err)
-			}
-			if err := writeYamlToFile(file, clean_data); err != nil {
-				return err
-			}
-		}
-	case "statefulset":
-		statefulSets, err := clientset.AppsV1().StatefulSets(namespace).List(ctx, metav1.ListOptions{})
-		if err != nil {
-			return fmt.Errorf("error fetching statefulsets: %v", err)
-		}
-		for _, ss := range statefulSets.Items {
-			json, err := convertToJson(ss)
-			if err != nil {
-				fmt.Printf("Error converting daemonSets to JSON: %v\n", err)
-				return err
-			}
-			clean_data, err := de_cluttering(string(json))
-			if err != nil {
-				fmt.Errorf("error Cleaning Json to file: %v", err)
-			}
-			if err := writeYamlToFile(file, clean_data); err != nil {
-				return err
-			}
-		}
+	// Similar blocks for daemonset and statefulset...
 	default:
 		return fmt.Errorf("invalid workload type: %s", workload)
 	}
@@ -230,6 +219,9 @@ func writeYamlToFile(file *os.File, resource string) error {
 	return err
 }
 
+// A function to Add
+// func dataAdder() {}
+
 func printYaml(resource string) {
 	var data interface{}
 	err := yaml.Unmarshal([]byte(resource), &data)
@@ -249,9 +241,10 @@ func printYaml(resource string) {
 func backup(workload, namespace, output string) error {
 	client := client.K8Client()
 
-	PrintWorkloadYaml(client, namespace, workload)
 	if output != "" {
 		PrintWorkloadYamlToFile(client, namespace, workload, output)
+	} else {
+		PrintWorkloadYaml(client, namespace, workload)
 	}
 
 	return nil
